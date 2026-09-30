@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { previewBytes, writeMode } from "./helpers/download.ts";
+import { previewBytes, rangeTotal, writeMode } from "./helpers/download.ts";
 import { gateOf, mediaMeta, outName, slug } from "./helpers/media.ts";
 import { pageVal, parseSeconds, parseUrl, resolveStart } from "./helpers/parse.ts";
 
@@ -101,9 +101,22 @@ describe("slug", () => {
 describe("outName", () => {
   it("is unique per recording so resume can never mix files", () => {
     const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "CLASE 2" };
-    expect(outName({ ...base, recordingId: "be5373c8-8682" }, 0)).toBe("CLASE-2-be5373c8.mp4");
-    expect(outName({ ...base, recordingId: "00ff00ff-1111" }, 10)).toBe("CLASE-2-00ff00ff-first10s.mp4");
-    expect(outName({ ...base, recordingId: "" }, 0)).toBe("CLASE-2.mp4");
+    expect(outName({ ...base, recordingId: "be5373c8-8682" }, 0)).toBe("CLASE-2-be5373c8-8682.mp4");
+    expect(outName({ ...base, recordingId: "00ff00ff-1111" }, 10)).toBe("CLASE-2-00ff00ff-1111-first10s.mp4");
+    expect(outName({ ...base, recordingId: "" }, 0)).toBe("CLASE-2-p.mp4");
+  });
+  it("keeps names apart for ids sharing a prefix", () => {
+    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "CLASE 2" };
+    expect(outName({ ...base, recordingId: "be5373c8-1111" }, 0)).not.toBe(
+      outName({ ...base, recordingId: "be5373c8-2222" }, 0),
+    );
+  });
+});
+
+describe("rangeTotal", () => {
+  it("reads the total from a 416 Content-Range reply", () => {
+    expect(rangeTotal("bytes */3")).toBe(3);
+    expect(rangeTotal(undefined)).toBeNaN();
   });
 });
 
@@ -118,6 +131,7 @@ describe("parseSeconds", () => {
     expect(parseSeconds("abc")).toBeNull();
     expect(parseSeconds("-5")).toBeNull();
     expect(parseSeconds("Infinity")).toBeNull();
+    expect(parseSeconds("0.5")).toBeNull();
   });
 });
 

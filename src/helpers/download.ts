@@ -9,3 +9,8 @@ export function previewBytes(sizeMB: number, duration: number, seconds: number):
 export function writeMode(partialBytes: number, status: number): "a" | "w" {
   return partialBytes > 0 && status === 206 ? "a" : "w";
 }
+
+/** total size N from a 416 Content-Range reply (bytes-star-slash-N), NaN when absent */
+export function rangeTotal(contentRange: string | string[] | undefined): number {
+  return Number((Array.isArray(contentRange) ? contentRange[0] : contentRange)?.split("/")[1]);
+}

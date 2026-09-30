@@ -23,7 +23,8 @@ export function slug(topic: string): string {
   return topic.replace(/[ /\\]/g, "-").replace(/[^A-Za-z0-9Á-ÿ._-]/g, "") || "zoom-recording";
 }
 
-/** recording id in the name makes it unique per recording, so a resume can only ever resume itself */
+/** full recording id in the name makes it unique per recording, so a resume can only ever resume itself */
 export function outName(meta: MediaMeta, secs: number): string {
-  return `${slug(meta.topic)}${meta.recordingId ? `-${meta.recordingId.slice(0, 8)}` : ""}${secs ? `-first${secs}s` : ""}.mp4`;
+  const id = meta.recordingId || meta.playId;
+  return `${slug(meta.topic)}${id ? `-${id}` : ""}${secs ? `-first${secs}s` : ""}.mp4`;
 }

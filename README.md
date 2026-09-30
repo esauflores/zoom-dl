@@ -67,8 +67,8 @@ play/info ──► viewMp4Url ──► playcheck ──► got stream (cookies
    `.mp4`. The seconds mode requests a byte range (2x the average byte rate + moov
    headroom — the mp4 has `moov` up front) and trims locally with the bundled
    `ffmpeg -t N -c copy`. Full downloads resume partial files with a Range request
-   (append only when the server answers 206); filenames carry the recording id, so a
-   resume can only ever resume the same recording, and a finished file is skipped on
+   (append only when the server answers 206); filenames carry the full recording
+   id, so a resume can only ever resume the same recording, and a finished file is skipped on
    re-runs.
 
 ## development

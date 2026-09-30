@@ -30,6 +30,6 @@ export function pageVal(key: string, html: string): string {
 /** 0 = full download, null = invalid */
 export function parseSeconds(raw: string | undefined): number | null {
   if (raw == null || raw === "") return 0;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+  const n = Math.trunc(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : null;
 }

@@ -1,16 +1,12 @@
 // http plumbing: fetch pages/json, stream transfers
 
-import { HTTPError, type Got, type OptionsInit, type Response } from "got";
+import type { Got, OptionsInit, Response } from "got";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 
 import type { ZoomResponse } from "../types.ts";
-import { writeMode } from "./download.ts";
+import { rangeTotal, writeMode } from "./download.ts";
 import { die, errMsg } from "./errors.ts";
-
-export function isHttp(e: unknown, status: number): boolean {
-  return e instanceof HTTPError && e.response.statusCode === status;
-}
 
 export async function fetchPage(client: Got, u: string): Promise<string> {
   try {
@@ -41,16 +37,26 @@ export async function transfer(
 ): Promise<void> {
   const reqHeaders = partialBytes > 0 ? { ...headers, range: `bytes=${partialBytes}-` } : headers;
   await new Promise<void>((resolve, reject) => {
-    const req = client.stream.get(url, { headers: reqHeaders, retry: { limit: 3 } });
+    const req = client.stream.get(url, { headers: reqHeaders, retry: { limit: 3 }, throwHttpErrors: false });
     req.on("response", (resp: Response) => {
-      pipeline(req, createWriteStream(out, { flags: writeMode(partialBytes, resp.statusCode ?? 200) })).then(
-        resolve,
-        reject,
-      );
+      const status = resp.statusCode;
+      if (status === 416 && partialBytes > 0) {
+        // range not satisfiable: provably complete only when the server's total matches our bytes
+        const total = rangeTotal(resp.headers["content-range"]);
+        if (total === partialBytes) resolve();
+        else reject(new Error(`resume mismatch: local ${partialBytes}B vs server total ${total}B`));
+        req.resume();
+        return;
+      }
+      if (status >= 200 && status < 300) {
+        pipeline(req, createWriteStream(out, { flags: writeMode(partialBytes, status) })).then(resolve, reject);
+        return;
+      }
+      req.resume();
+      reject(new Error(`http ${status}`)); // error pages never become .mp4
     });
-    req.on("error", (e: unknown) => (partialBytes > 0 && isHttp(e, 416) ? resolve() : reject(e)));
+    req.on("error", reject);
   }).catch((e) => {
-    if (partialBytes > 0 && isHttp(e, 416)) return; // already fully retrieved
     die(`download failed: ${errMsg(e)}`);
   });
 }
