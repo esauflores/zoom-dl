@@ -4,11 +4,13 @@ Download Zoom cloud recordings — including **passcode-protected** ones and one
 owner disabled the download button.
 
 ```bash
-bun run zoom-dl <url> [passcode] [seconds] [-o dir]
+bun add -g @esauflores/zoom-dl    # or: npm i -g @esauflores/zoom-dl (the binary runs on bun)
 
-bun run zoom-dl 'https://us02web.zoom.us/rec/play/...' 'KD+ZLT1s'          # full recording
-bun run zoom-dl 'https://us02web.zoom.us/rec/share/...' '*8q*n4mW' 10     # 10s preview
-bun run zoom-dl 'https://us02web.zoom.us/rec/component-page?...' '...' -o /tmp
+zoom-dl <url> [passcode] [seconds] [-o dir]
+
+zoom-dl 'https://us02web.zoom.us/rec/play/...' 'KD+ZLT1s'          # full recording
+zoom-dl 'https://us02web.zoom.us/rec/share/...' '*8q*n4mW' 10     # 10s preview
+zoom-dl 'https://us02web.zoom.us/rec/component-page?...' '...' -o /tmp
 ```
 
 All three URL forms work: `/rec/play/...`, `/rec/share/...`, and the passcode page
@@ -19,6 +21,7 @@ Needs: `bun`. The seconds preview trims with a bundled ffmpeg
 (`ffmpeg-static` — no system install needed; `trustedDependencies` is set so bun runs
 its binary download on install). Output goes to
 `~/Downloads` (`-o dir` or `ZOOM_DL_DIR` to change), named after the meeting topic.
+From a checkout instead of npm: `bun run zoom-dl ...`.
 
 ## how it works
 

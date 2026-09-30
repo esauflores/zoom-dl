@@ -1,7 +1,15 @@
 {
-  "name": "zoom-dl",
+  "name": "@esauflores/zoom-dl",
   "version": "1.0.0",
-  "private": true,
+  "description": "Download Zoom cloud recordings — including passcode-protected ones and ones with the download button disabled",
+  "license": "MIT",
+  "bin": {
+    "zoom-dl": "src/zoom-dl.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "type": "module",
   "scripts": {
     "check": "oxlint && oxfmt --check && tsc --noEmit",
@@ -21,6 +29,9 @@
     "oxlint": "^1.86.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
+  },
+  "engines": {
+    "bun": ">=1.4"
   },
   "trustedDependencies": [
     "ffmpeg-static"
