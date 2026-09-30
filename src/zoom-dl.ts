@@ -12,7 +12,7 @@
 
 import { Command } from "commander";
 import ffmpegPath from "ffmpeg-static";
-import got, { HTTPError, type Got, type OptionsInit, type Response } from "got";
+import got, { type Got, type Response } from "got";
 import { spawnSync } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -21,7 +21,12 @@ import { pipeline } from "node:stream/promises";
 import { CookieJar } from "tough-cookie";
 
 import {
+  die,
+  errMsg,
+  fetchJson,
+  fetchPage,
   gateOf,
+  isHttp,
   mediaMeta,
   outName,
   pageVal,
@@ -33,38 +38,6 @@ import {
   writeMode,
 } from "./helpers.ts";
 import type { ZoomResponse, ZoomResult } from "./types.ts";
-
-function die(msg: string): never {
-  console.error(`zoom-dl: ${msg}`);
-  process.exit(1);
-}
-
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-function isHttp(e: unknown, status: number): boolean {
-  return e instanceof HTTPError && e.response.statusCode === status;
-}
-
-async function fetchPage(client: Got, u: string): Promise<string> {
-  try {
-    return (await client.get(u)).body;
-  } catch (e) {
-    return die(`fetch failed: ${errMsg(e)}`);
-  }
-}
-
-async function fetchJson(client: Got, u: string, opts: OptionsInit = {}): Promise<ZoomResponse> {
-  let parsed: unknown;
-  try {
-    parsed = (await client(u, { responseType: "json", ...opts })).body;
-  } catch (e) {
-    return die(`request failed: ${errMsg(e)}`);
-  }
-  if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
-  return parsed as ZoomResponse;
-}
 
 async function run(url: string, pass: string, secs: number, outDir: string): Promise<void> {
   const start = resolveStart(url);

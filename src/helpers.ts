@@ -1,6 +1,40 @@
-// pure helpers — no network, no side effects (all unit-tested)
+// helpers — plumbing and pure logic; zoom-dl.ts keeps the core flow only
+
+import { HTTPError, type Got, type OptionsInit } from "got";
 
 import type { MediaMeta, ZoomResponse, ZoomResult } from "./types.ts";
+
+export function die(msg: string): never {
+  console.error(`zoom-dl: ${msg}`);
+  process.exit(1);
+}
+
+export function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+export function isHttp(e: unknown, status: number): boolean {
+  return e instanceof HTTPError && e.response.statusCode === status;
+}
+
+export async function fetchPage(client: Got, u: string): Promise<string> {
+  try {
+    return (await client.get(u)).body;
+  } catch (e) {
+    return die(`fetch failed: ${errMsg(e)}`);
+  }
+}
+
+export async function fetchJson(client: Got, u: string, opts: OptionsInit = {}): Promise<ZoomResponse> {
+  let parsed: unknown;
+  try {
+    parsed = (await client(u, { responseType: "json", ...opts })).body;
+  } catch (e) {
+    return die(`request failed: ${errMsg(e)}`);
+  }
+  if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
+  return parsed as ZoomResponse;
+}
 
 export function safeUrl(raw: string, base?: string): URL | null {
   try {
