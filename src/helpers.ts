@@ -1,6 +1,8 @@
 // helpers — plumbing and pure logic; zoom-dl.ts keeps the core flow only
 
-import { HTTPError, type Got, type OptionsInit } from "got";
+import { HTTPError, type Got, type OptionsInit, type Response } from "got";
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 
 import type { MediaMeta, ZoomResponse, ZoomResult } from "./types.ts";
 
@@ -34,6 +36,30 @@ export async function fetchJson(client: Got, u: string, opts: OptionsInit = {}):
   }
   if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
   return parsed as ZoomResponse;
+}
+
+/** stream a URL to a file; partialBytes > 0 resumes with a Range request */
+export async function transfer(
+  client: Got,
+  url: string,
+  out: string,
+  headers: Record<string, string>,
+  partialBytes: number,
+): Promise<void> {
+  const reqHeaders = partialBytes > 0 ? { ...headers, range: `bytes=${partialBytes}-` } : headers;
+  await new Promise<void>((resolve, reject) => {
+    const req = client.stream.get(url, { headers: reqHeaders, retry: { limit: 3 } });
+    req.on("response", (resp: Response) => {
+      pipeline(req, createWriteStream(out, { flags: writeMode(partialBytes, resp.statusCode ?? 200) })).then(
+        resolve,
+        reject,
+      );
+    });
+    req.on("error", (e: unknown) => (partialBytes > 0 && isHttp(e, 416) ? resolve() : reject(e)));
+  }).catch((e) => {
+    if (partialBytes > 0 && isHttp(e, 416)) return; // already fully retrieved
+    die(`download failed: ${errMsg(e)}`);
+  });
 }
 
 export function safeUrl(raw: string, base?: string): URL | null {

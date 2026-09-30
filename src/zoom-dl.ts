@@ -12,21 +12,18 @@
 
 import { Command } from "commander";
 import ffmpegPath from "ffmpeg-static";
-import got, { type Got, type Response } from "got";
+import got from "got";
 import { spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { pipeline } from "node:stream/promises";
 import { CookieJar } from "tough-cookie";
 
 import {
   die,
-  errMsg,
   fetchJson,
   fetchPage,
   gateOf,
-  isHttp,
   mediaMeta,
   outName,
   pageVal,
@@ -35,7 +32,7 @@ import {
   previewBytes,
   resolveStart,
   safeUrl,
-  writeMode,
+  transfer,
 } from "./helpers.ts";
 import type { ZoomResponse, ZoomResult } from "./types.ts";
 
@@ -191,30 +188,6 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     renameSync(part, out);
   }
   console.log(out);
-}
-
-/** stream a URL to a file; partialBytes > 0 resumes with a Range request */
-async function transfer(
-  client: Got,
-  url: string,
-  out: string,
-  headers: Record<string, string>,
-  partialBytes: number,
-): Promise<void> {
-  const reqHeaders = partialBytes > 0 ? { ...headers, range: `bytes=${partialBytes}-` } : headers;
-  await new Promise<void>((resolve, reject) => {
-    const req = client.stream.get(url, { headers: reqHeaders, retry: { limit: 3 } });
-    req.on("response", (resp: Response) => {
-      pipeline(req, createWriteStream(out, { flags: writeMode(partialBytes, resp.statusCode ?? 200) })).then(
-        resolve,
-        reject,
-      );
-    });
-    req.on("error", (e: unknown) => (partialBytes > 0 && isHttp(e, 416) ? resolve() : reject(e)));
-  }).catch((e) => {
-    if (partialBytes > 0 && isHttp(e, 416)) return; // already fully retrieved
-    die(`download failed: ${errMsg(e)}`);
-  });
 }
 
 if (import.meta.main) {

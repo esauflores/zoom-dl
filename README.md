@@ -82,7 +82,7 @@ bun run test         # vitest
 
 ```text
 src/zoom-dl.ts       CLI + flow (got does HTTP, TS does logic)
-src/helpers.ts       pure helpers: url/page parsing, naming, resume decisions
+src/helpers.ts       fetch plumbing + pure logic (url/page parsing, naming, resume)
 src/types.ts         response contracts (only the fields we read)
 src/zoom-dl.test.ts  vitest specs for the pure helpers
 zoom-dl.sh           wrapper: exec bun src/zoom-dl.ts "$@"
