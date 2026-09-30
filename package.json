@@ -2,7 +2,15 @@
   "name": "@esauflores/zoom-dl",
   "version": "1.0.0",
   "description": "Download Zoom cloud recordings — including passcode-protected ones and ones with the download button disabled",
+  "homepage": "https://github.com/esauflores/zoom-dl#readme",
+  "bugs": {
+    "url": "https://github.com/esauflores/zoom-dl/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/esauflores/zoom-dl.git"
+  },
   "bin": {
     "zoom-dl": "src/zoom-dl.ts"
   },
