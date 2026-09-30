@@ -151,23 +151,10 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
       { referer, range: `bytes=0-${previewBytes(meta.sizeMB, meta.duration, secs)}` },
       0,
     );
+
     const ff = spawnSync(
       ffmpegPath ?? "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        part,
-        "-t",
-        String(secs),
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        out,
-      ],
+      ["-loglevel", "error", "-y", "-i", part, "-t", String(secs), "-c", "copy", out],
       { stdio: ["ignore", "inherit", "inherit"] },
     );
     if (ff.status !== 0) die("ffmpeg failed");
