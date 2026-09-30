@@ -14,7 +14,7 @@ import { Command } from "commander";
 import ffmpegPath from "ffmpeg-static";
 import got, { HTTPError, type Got, type OptionsInit, type Response } from "got";
 import { spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -31,8 +31,8 @@ import {
   resolveStart,
   safeUrl,
   writeMode,
-} from "./helpers";
-import type { ZoomResponse, ZoomResult } from "./types";
+} from "./helpers.ts";
+import type { ZoomResponse, ZoomResult } from "./types.ts";
 
 function die(msg: string): never {
   console.error(`zoom-dl: ${msg}`);
@@ -208,10 +208,11 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
       { stdio: ["ignore", "inherit", "inherit"] },
     );
     if (ff.status !== 0) die("ffmpeg failed");
-  } else {
-    const have = existsSync(out) ? statSync(out).size : 0;
-    const expected = meta.sizeMB * 1024 * 1024;
-    if (!(expected && have >= expected * 0.95)) await transfer(client, meta.viewUrl, out, { referer }, have);
+  } else if (!existsSync(out)) {
+    // .part + rename: an existing .mp4 is complete by construction, no size guesswork
+    const part = `${out}.part`;
+    await transfer(client, meta.viewUrl, part, { referer }, existsSync(part) ? statSync(part).size : 0);
+    renameSync(part, out);
   }
   console.log(out);
 }

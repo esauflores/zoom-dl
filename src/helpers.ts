@@ -1,6 +1,6 @@
 // pure helpers — no network, no side effects (all unit-tested)
 
-import type { MediaMeta, ZoomResponse, ZoomResult } from "./types";
+import type { MediaMeta, ZoomResponse, ZoomResult } from "./types.ts";
 
 export function safeUrl(raw: string, base?: string): URL | null {
   try {
@@ -26,7 +26,7 @@ export function resolveStart(raw: string): string {
 
 /** value of a `key: '...'` entry in window.__data__ */
 export function pageVal(key: string, html: string): string {
-  return html.match(new RegExp(`${key}:\\s*['"]([^'"]*)['"]`))?.[1] ?? "";
+  return html.match(new RegExp(`\\b${key}:\\s*['"]([^'"]*)['"]`))?.[1] ?? "";
 }
 
 /** the new player answers componentName=need-password when gated */
