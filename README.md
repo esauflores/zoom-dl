@@ -4,7 +4,7 @@ Download Zoom cloud recordings — including **passcode-protected** ones and one
 owner disabled the download button.
 
 ```bash
-npm i -g @esauflores/zoom-dl
+npm i -g @esauflores/zoom-dl --allow-scripts=ffmpeg-static
 
 zoom-dl <url> [passcode] [seconds] [-o dir]
 
