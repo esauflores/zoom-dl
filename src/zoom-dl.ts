@@ -19,21 +19,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { CookieJar } from "tough-cookie";
 
-import {
-  die,
-  fetchJson,
-  fetchPage,
-  gateOf,
-  mediaMeta,
-  outName,
-  pageVal,
-  parseSeconds,
-  parseUrl,
-  previewBytes,
-  resolveStart,
-  safeUrl,
-  transfer,
-} from "./helpers.ts";
+import { previewBytes } from "./helpers/download.ts";
+import { die } from "./helpers/errors.ts";
+import { fetchJson, fetchPage, transfer } from "./helpers/http.ts";
+import { gateOf, mediaMeta, outName } from "./helpers/media.ts";
+import { pageVal, parseSeconds, parseUrl, resolveStart, safeUrl } from "./helpers/parse.ts";
 import type { ZoomResponse, ZoomResult } from "./types.ts";
 
 async function run(url: string, pass: string, secs: number, outDir: string): Promise<void> {

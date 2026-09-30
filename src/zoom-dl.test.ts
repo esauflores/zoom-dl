@@ -1,17 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  gateOf,
-  mediaMeta,
-  outName,
-  pageVal,
-  parseSeconds,
-  parseUrl,
-  previewBytes,
-  resolveStart,
-  slug,
-  writeMode,
-} from "./helpers.ts";
+import { previewBytes, writeMode } from "./helpers/download.ts";
+import { gateOf, mediaMeta, outName, slug } from "./helpers/media.ts";
+import { pageVal, parseSeconds, parseUrl, resolveStart } from "./helpers/parse.ts";
 
 const PLAY_URL =
   "https://us02web.zoom.us/rec/play/AbC.123?accessLevel=meeting&canPlayFromShare=true&continueMode=true&iet=TOK.ET&componentName=rec-play&originRequestUrl=https%3A%2F%2Fus02web.zoom.us%2Frec%2Fshare%2Fx%3Fiet%3Dinner";

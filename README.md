@@ -81,8 +81,13 @@ bun run test         # vitest
 ```
 
 ```text
-src/zoom-dl.ts       CLI + flow (got does HTTP, TS does logic)
-src/helpers.ts       fetch plumbing + pure logic (url/page parsing, naming, resume)
+src/zoom-dl.ts       CLI + core flow (run + commander)
+src/helpers/         helpers by category:
+  errors.ts          die/errMsg
+  http.ts            fetchPage/fetchJson/transfer + isHttp
+  parse.ts           url / page / arg parsing
+  media.ts           response → identity + output naming
+  download.ts        preview + resume math
 src/types.ts         response contracts (only the fields we read)
 src/zoom-dl.test.ts  vitest specs for the pure helpers
 zoom-dl.sh           wrapper: exec bun src/zoom-dl.ts "$@"
