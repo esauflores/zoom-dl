@@ -183,6 +183,14 @@ if (import.meta.main) {
     .argument("[passcode]", "meeting passcode; omit if the recording is not protected")
     .argument("[seconds]", "only grab the first N seconds (quick preview)")
     .option("-o, --out-dir <dir>", "output directory", process.env.ZOOM_DL_DIR || join(homedir(), "Downloads"))
+    .addHelpText(
+      "after",
+      `
+examples:
+  zoom-dl 'https://.../rec/play/...' 'KD+ZLT1s'          # full recording
+  zoom-dl 'https://.../rec/share/...' '*8q*n4mW' 10      # 10s preview
+  zoom-dl 'https://.../rec/component-page?...' '...' -o /tmp`,
+    )
     .action(
       async (url: string, passcode: string | undefined, seconds: string | undefined, opts: { outDir: string }) => {
         const secs = parseSeconds(seconds);
