@@ -4,7 +4,7 @@ Download Zoom cloud recordings — including **passcode-protected** ones and one
 owner disabled the download button.
 
 ```bash
-npm i -g @esauflores/zoom-dl    # or: bun add -g — runs on Node.js >= 18, no bun needed
+npm i -g @esauflores/zoom-dl
 
 zoom-dl <url> [passcode] [seconds] [-o dir]
 
