@@ -10,6 +10,7 @@ import {
   previewBytes,
   resolveStart,
   slug,
+  writeMode,
 } from "./zoom-dl";
 
 const PLAY_URL =
@@ -125,6 +126,15 @@ describe("parseSeconds", () => {
     expect(parseSeconds("abc")).toBeNull();
     expect(parseSeconds("-5")).toBeNull();
     expect(parseSeconds("Infinity")).toBeNull();
+  });
+});
+
+describe("writeMode", () => {
+  it("appends only when the server confirmed the resume offset", () => {
+    expect(writeMode(1000, 206)).toBe("a");
+    expect(writeMode(1000, 200)).toBe("w"); // server ignored the Range header, start over
+    expect(writeMode(0, 206)).toBe("w");
+    expect(writeMode(0, 200)).toBe("w");
   });
 });
 

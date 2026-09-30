@@ -8,14 +8,17 @@
 //   passcode meeting passcode; omit if the recording is not protected
 //   seconds  only grab the first N seconds (quick preview)
 //
-// needs: curl (the seconds preview uses the bundled ffmpeg)
+// needs: bun (the seconds preview uses the bundled ffmpeg)
 
 import { Command } from "commander";
 import ffmpegPath from "ffmpeg-static";
+import got, { HTTPError, type Got, type OptionsInit, type Response } from "got";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { CookieJar } from "tough-cookie";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36";
 
@@ -103,7 +106,7 @@ export function slug(topic: string): string {
   return topic.replace(/[ /\\]/g, "-").replace(/[^A-Za-z0-9Á-ÿ._-]/g, "") || "zoom-recording";
 }
 
-/** recording id in the name makes it unique per recording, so curl -C - only ever resumes itself */
+/** recording id in the name makes it unique per recording, so a resume can only ever resume itself */
 export function outName(meta: MediaMeta, secs: number): string {
   return `${slug(meta.topic)}${meta.recordingId ? `-${meta.recordingId.slice(0, 8)}` : ""}${secs ? `-first${secs}s` : ""}.mp4`;
 }
@@ -120,6 +123,11 @@ export function parseSeconds(raw: string | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
+/** append only when the server confirmed our resume offset (206); anything else starts over */
+export function writeMode(partialBytes: number, status: number): "a" | "w" {
+  return partialBytes > 0 && status === 206 ? "a" : "w";
+}
+
 // ---------- cli ----------
 
 function die(msg: string): never {
@@ -127,103 +135,104 @@ function die(msg: string): never {
   process.exit(1);
 }
 
-/** curl does HTTP (resume/retry/cookies); --fail so error pages never end up as .mp4 */
-function curl(jar: string, args: string[], outFile?: string, allowFail = false): string {
-  const res = spawnSync(
-    "curl",
-    ["-sS", "--fail", "--compressed", "-b", jar, "-c", jar, "-A", UA, ...(outFile ? ["-o", outFile] : []), ...args],
-    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
-  if (res.status !== 0 && !allowFail) die(`curl failed: ${res.stderr?.trim() || res.status}`);
-  return res.stdout ?? "";
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
-function run(url: string, pass: string, secs: number, outDir: string): void {
+function isHttp(e: unknown, status: number): boolean {
+  return e instanceof HTTPError && e.response.statusCode === status;
+}
+
+async function run(url: string, pass: string, secs: number, outDir: string): Promise<void> {
   const start = resolveStart(url);
   const ctx = parseUrl(start);
   const { host } = ctx;
   if (!host) die(`invalid url: ${url}`);
   const work = mkdtempSync(join(tmpdir(), "zoom-dl-"));
   process.on("exit", () => rmSync(work, { recursive: true, force: true }));
-  const jar = join(work, "cookies.txt");
 
-  const fetchPage = (u: string): string => {
-    const f = join(work, "page.html");
-    curl(jar, ["-L", u], f);
-    return readFileSync(f, "utf8");
+  const client = got.extend({
+    cookieJar: new CookieJar(),
+    headers: { "user-agent": UA },
+    followRedirect: true,
+    retry: { limit: 2 },
+  });
+
+  const fetchPage = async (u: string): Promise<string> => {
+    try {
+      return (await client.get(u)).body;
+    } catch (e) {
+      return die(`fetch failed: ${errMsg(e)}`);
+    }
   };
-  const fetchJson = (u: string, args: string[], name: string): ZoomResponse => {
-    const f = join(work, name);
-    curl(jar, [...args, u], f);
+  const fetchJson = async (u: string, opts: OptionsInit = {}): Promise<ZoomResponse> => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(readFileSync(f, "utf8"));
-    } catch {
-      return die(`invalid json from ${u}`);
+      parsed = (await client(u, { responseType: "json", ...opts })).body;
+    } catch (e) {
+      return die(`request failed: ${errMsg(e)}`);
     }
     if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
     return parsed as ZoomResponse;
   };
 
   // 1. CSRF token (zoom validates POSTs through CSRFGuard)
-  const csrf = curl(
-    jar,
-    ["-X", "POST", "-H", "FETCH-CSRF-TOKEN: 1", `${host}/csrf_js?t_x_zm_rid=1`],
-    undefined,
-    true,
-  ).trim();
-  const csrfH = csrf.includes(":") ? ["-H", csrf] : [];
-  const formH = ["-X", "POST", "-H", "Content-Type: application/x-www-form-urlencoded; charset=UTF-8", ...csrfH];
+  const csrfResp = await client
+    .post(`${host}/csrf_js?t_x_zm_rid=1`, { headers: { "FETCH-CSRF-TOKEN": "1" }, throwHttpErrors: false })
+    .catch(() => ({ body: "" }));
+  const csrf = csrfResp.body.trim();
+  const csrfAt = csrf.indexOf(":");
+  const csrfHeaders: Record<string, string> = csrfAt > 0 ? { [csrf.slice(0, csrfAt)]: csrf.slice(csrfAt + 1) } : {};
 
   // 2. passcode gate: the player points at a component page holding the id to
   //    validate; /rec/validate_meet_passwd (old flow) is long dead.
-  const passGate = (gate: ZoomResult): void => {
+  const passGate = async (gate: ZoomResult): Promise<void> => {
     if (!pass) die("passcode protected — pass it as argument 2");
     const pageUrl = safeUrl(gate.redirectUrl ?? "", host);
     if (!pageUrl) die(`bad gate redirect: ${gate.redirectUrl}`);
     for (const [k, v] of Object.entries(gate)) if (v != null) pageUrl.searchParams.set(k, String(v));
-    const compHtml = fetchPage(pageUrl.toString());
+    const compHtml = await fetchPage(pageUrl.toString());
     const meetId = pageVal("meeting_id", compHtml);
     const compFileId = pageVal("fileId", compHtml);
     if (!meetId) die("could not read meeting_id from passcode page");
     const useW = gate.useWhichPasswd || "meeting";
-    const vctx = fetchJson(
-      `${host}/nws/recording/1.0/validate-context`,
-      [
-        ...formH,
-        ...form({
-          meetingId: meetId,
-          fileId: compFileId,
-          useWhichPasswd: useW,
-          sharelevel: gate.sharelevel || "meeting",
-          iet: ctx.iet,
-        }),
-      ],
-      "vctx.json",
-    );
+    const vctx = await fetchJson(`${host}/nws/recording/1.0/validate-context`, {
+      method: "post",
+      headers: csrfHeaders,
+      form: {
+        meetingId: meetId,
+        fileId: compFileId,
+        useWhichPasswd: useW,
+        sharelevel: gate.sharelevel || "meeting",
+        iet: ctx.iet,
+      },
+    });
     const vid = useW === "meeting" ? vctx.result?.encryptMeetId : vctx.result?.fileId || compFileId;
     if (!vid) die("validate-context failed (wrong passcode or dead link)");
-    const ok = fetchJson(
+    const ok = await fetchJson(
       `${host}/nws/recording/1.0/${useW === "meeting" ? "validate-meeting-passwd" : "validate-passwd"}`,
-      [...formH, ...form({ id: vid, passwd: pass, action: gate.action || "viewdetailpage", recaptcha: "" })],
-      "validate.json",
+      {
+        method: "post",
+        headers: csrfHeaders,
+        form: { id: vid, passwd: pass, action: gate.action || "viewdetailpage", recaptcha: "" },
+      },
     );
     if (!ok.status) die(`passcode rejected: ${ok.errorMessage}`);
   };
 
   // 3. page -> fileId; share links have none and bounce through play/share-info
   //    (which may itself be the gate) before landing on the play page.
-  let html = fetchPage(start);
+  let html = await fetchPage(start);
   let fileId = pageVal("fileId", html);
   if (!fileId) {
     const meeting = pageVal("meetingId", html);
     if (!meeting) die("no fileId on page — link expired or wrong url");
     const sinfoUrl = `${host}/nws/recording/1.0/play/share-info/${meeting}`;
-    let sinfo = fetchJson(sinfoUrl, [], "sinfo.json");
+    let sinfo = await fetchJson(sinfoUrl);
     const shareGate = gateOf(sinfo);
     if (shareGate) {
-      passGate(shareGate);
-      sinfo = fetchJson(sinfoUrl, [], "sinfo.json");
+      await passGate(shareGate);
+      sinfo = await fetchJson(sinfoUrl);
     }
     let redir = sinfo.result?.redirectUrl ?? "";
     if (!redir) die("share-info returned no redirect");
@@ -233,52 +242,50 @@ function run(url: string, pass: string, secs: number, outDir: string): void {
       ctx.query = from.query;
       ctx.iet = from.iet;
     }
-    html = fetchPage(redir);
+    html = await fetchPage(redir);
     fileId = pageVal("fileId", html);
   }
   if (!fileId) die("no fileId on page — link expired or wrong url");
 
-  const playInfo = (): ZoomResponse =>
+  const playInfo = async (): Promise<ZoomResponse> =>
     fetchJson(
       `${host}/nws/recording/1.0/play/info/${fileId}?${new URLSearchParams(ctx.query)}&originDomain=${ctx.hostname}`,
-      csrfH,
-      "info.json",
+      {
+        headers: csrfHeaders,
+      },
     );
-  let info = playInfo();
+  let info = await playInfo();
   const infoGate = gateOf(info);
   if (infoGate) {
-    passGate(infoGate);
-    info = playInfo();
+    await passGate(infoGate);
+    info = await playInfo();
   }
 
   // 4. media info + CDN unlock (without playcheck the CDN 403s)
   const meta = mediaMeta(info.result ?? {});
   if (!meta.viewUrl) die("no playable media url in play/info response");
   if (!meta.playId || !meta.accessId) die("play/info missing playId/accessId");
-  curl(
-    jar,
-    [
-      ...csrfH,
-      "--get",
-      "--data-urlencode",
-      `accid=${meta.accessId}`,
-      "--data",
-      "dur=0",
-      `${host}/nws/recording/1.0/playcheck/${meta.playId}`,
-    ],
-    undefined,
-    true,
-  );
+  await client
+    .get(`${host}/nws/recording/1.0/playcheck/${meta.playId}`, {
+      searchParams: { accid: meta.accessId, dur: 0 },
+      headers: csrfHeaders,
+      throwHttpErrors: false,
+    })
+    .catch(() => undefined);
 
-  // 5. download (cdn wants cookie jar + referer; ffmpeg's own http client gets 403'd)
+  // 5. transfer: stream to disk (non-2xx throws, so error pages never end up as .mp4)
   mkdirSync(outDir, { recursive: true });
   const out = join(outDir, outName(meta, secs));
+  const referer = `${host}/`;
   if (secs) {
     const part = join(work, "part.mp4");
-    curl(
-      jar,
-      ["-H", `Referer: ${host}/`, "-r", `0-${previewBytes(meta.sizeMB, meta.duration, secs)}`, meta.viewUrl],
+    // ponytail: the CDN honors Range (verified); one that ignores it just fills tmp, the trim still works
+    await transfer(
+      client,
+      meta.viewUrl,
       part,
+      { referer, range: `bytes=0-${previewBytes(meta.sizeMB, meta.duration, secs)}` },
+      0,
     );
     const ff = spawnSync(
       ffmpegPath ?? "ffmpeg",
@@ -303,29 +310,49 @@ function run(url: string, pass: string, secs: number, outDir: string): void {
   } else {
     const have = existsSync(out) ? statSync(out).size : 0;
     const expected = meta.sizeMB * 1024 * 1024;
-    if (!(expected && have >= expected * 0.95)) {
-      curl(jar, ["-H", `Referer: ${host}/`, "--retry", "3", "-C", "-", meta.viewUrl], out);
-    }
+    if (!(expected && have >= expected * 0.95)) await transfer(client, meta.viewUrl, out, { referer }, have);
   }
   console.log(out);
 }
 
-/** curl form args for application/x-www-form-urlencoded POSTs */
-const form = (data: Record<string, string>): string[] =>
-  Object.entries(data).flatMap(([k, v]) => ["--data-urlencode", `${k}=${v}`]);
+/** stream a URL to a file; partialBytes > 0 resumes with a Range request */
+async function transfer(
+  client: Got,
+  url: string,
+  out: string,
+  headers: Record<string, string>,
+  partialBytes: number,
+): Promise<void> {
+  const reqHeaders = partialBytes > 0 ? { ...headers, range: `bytes=${partialBytes}-` } : headers;
+  await new Promise<void>((resolve, reject) => {
+    const req = client.stream.get(url, { headers: reqHeaders, retry: { limit: 3 } });
+    req.on("response", (resp: Response) => {
+      pipeline(req, createWriteStream(out, { flags: writeMode(partialBytes, resp.statusCode ?? 200) })).then(
+        resolve,
+        reject,
+      );
+    });
+    req.on("error", (e: unknown) => (partialBytes > 0 && isHttp(e, 416) ? resolve() : reject(e)));
+  }).catch((e) => {
+    if (partialBytes > 0 && isHttp(e, 416)) return; // already fully retrieved
+    die(`download failed: ${errMsg(e)}`);
+  });
+}
 
 if (import.meta.main) {
-  new Command()
+  await new Command()
     .name("zoom-dl")
     .description("Download a Zoom cloud recording (passcode-protected / download-disabled friendly)")
     .argument("<url>", "/rec/play/..., /rec/share/... or the passcode page link")
     .argument("[passcode]", "meeting passcode; omit if the recording is not protected")
     .argument("[seconds]", "only grab the first N seconds (quick preview)")
     .option("-o, --out-dir <dir>", "output directory", process.env.ZOOM_DL_DIR || join(homedir(), "Downloads"))
-    .action((url: string, passcode: string | undefined, seconds: string | undefined, opts: { outDir: string }) => {
-      const secs = parseSeconds(seconds);
-      if (secs == null) die(`invalid seconds: ${seconds}`);
-      run(url, passcode ?? "", secs, opts.outDir);
-    })
-    .parse();
+    .action(
+      async (url: string, passcode: string | undefined, seconds: string | undefined, opts: { outDir: string }) => {
+        const secs = parseSeconds(seconds);
+        if (secs == null) die(`invalid seconds: ${seconds}`);
+        await run(url, passcode ?? "", secs, opts.outDir);
+      },
+    )
+    .parseAsync();
 }

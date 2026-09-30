@@ -15,7 +15,7 @@ All three URL forms work: `/rec/play/...`, `/rec/share/...`, and the passcode pa
 (`/rec/component-page?...`, unwrapped via its `originRequestUrl` param). The `?iet=...`
 token in the link is what matters — it's the share session token.
 
-Needs: `bun`, `curl`. The seconds preview trims with a bundled ffmpeg
+Needs: `bun`. The seconds preview trims with a bundled ffmpeg
 (`ffmpeg-static` — no system install needed; `trustedDependencies` is set so bun runs
 its binary download on install). Output goes to
 `~/Downloads` (`-o dir` or `ZOOM_DL_DIR` to change), named after the meeting topic.
@@ -33,7 +33,7 @@ url ──► play page ──► fileId ──► play/info ──► need-pass
              └── share links: play/share-info/{meetingId} ──► play page
                                 (may itself be the gate)
 
-play/info ──► viewMp4Url ──► playcheck ──► curl (cookies + Referer) ──► .mp4
+play/info ──► viewMp4Url ──► playcheck ──► got stream (cookies + Referer) ──► .mp4
 ```
 
 1. **Session + CSRF.** Every run gets a cookie jar, then a CSRF token:
@@ -62,13 +62,14 @@ play/info ──► viewMp4Url ──► playcheck ──► curl (cookies + Ref
    a Lambda@Edge on `ssrweb.zoom.us` 403s (`Forbbiden`, sic) every media request until
    the session is playchecked.
 
-6. **Transfer.** `curl --fail` with the cookie jar and `Referer: https://<host>/` — error
-   pages never end up saved as `.mp4`. ffmpeg's own HTTP client gets 403'd, so the seconds
-   mode does a ranged `curl` (2x the average byte rate + moov headroom — the mp4 has
-   `moov` up front) and trims locally with the bundled `ffmpeg -t N -c copy`. Full
-   downloads resume
-   with `curl -C -`; filenames carry the recording id, so a resume can only ever resume
-   the same recording, and a finished file is skipped on re-runs.
+6. **Transfer.** `got` streams to disk over the shared `tough-cookie` jar with
+   `Referer: https://<host>/` — non-2xx throws, so error pages never end up saved as
+   `.mp4`. The seconds mode requests a byte range (2x the average byte rate + moov
+   headroom — the mp4 has `moov` up front) and trims locally with the bundled
+   `ffmpeg -t N -c copy`. Full downloads resume partial files with a Range request
+   (append only when the server answers 206); filenames carry the recording id, so a
+   resume can only ever resume the same recording, and a finished file is skipped on
+   re-runs.
 
 ## development
 
@@ -80,7 +81,7 @@ bun run test         # vitest
 ```
 
 ```text
-src/zoom-dl.ts       CLI + flow (curl does HTTP, TS does logic)
+src/zoom-dl.ts       CLI + flow (got does HTTP, TS does logic)
 src/zoom-dl.test.ts  vitest specs for the pure helpers
 zoom-dl.sh           wrapper: exec bun src/zoom-dl.ts "$@"
 ```
