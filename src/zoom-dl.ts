@@ -26,11 +26,13 @@ import { gateOf, mediaMeta, outName } from "./helpers/media.ts";
 import { pageVal, parseSeconds, parseUrl, resolveStart, safeUrl } from "./helpers/parse.ts";
 import type { ZoomResponse, ZoomResult } from "./types.ts";
 
+// flow: page -> (passcode gate) -> fileId -> play/info -> playcheck -> transfer
 async function run(url: string, pass: string, secs: number, outDir: string): Promise<void> {
   const start = resolveStart(url);
   const ctx = parseUrl(start);
   const { host } = ctx;
   if (!host) die(`invalid url: ${url}`);
+  // scratch dir for the preview's byte range; cleaned up however we exit
   const work = mkdtempSync(join(tmpdir(), "zoom-dl-"));
   process.on("exit", () => rmSync(work, { recursive: true, force: true }));
 
@@ -40,7 +42,9 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     retry: { limit: 2 },
   });
 
-  // 1. CSRF token (zoom validates POSTs through CSRFGuard)
+  // 1. CSRF token: CSRFGuard answers the FETCH-CSRF-TOKEN request with "NAME:value";
+  //    that pair becomes a request header on every POST below (split at the first
+  //    colon — the value may contain more). No token = those POSTs 403.
   const csrfResp = await client
     .post(`${host}/csrf_js?t_x_zm_rid=1`, { headers: { "FETCH-CSRF-TOKEN": "1" }, throwHttpErrors: false })
     .catch(() => ({ body: "" }));
@@ -48,12 +52,17 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   const csrfAt = csrf.indexOf(":");
   const csrfHeaders: Record<string, string> = csrfAt > 0 ? { [csrf.slice(0, csrfAt)]: csrf.slice(csrfAt + 1) } : {};
 
-  // 2. passcode gate: the player points at a component page holding the id to
-  //    validate; /rec/validate_meet_passwd (old flow) is long dead.
+  // 2. passcode gate (componentName=need-password): follow the redirect to the
+  //    component page, echo the gate's query params back at it, read meeting_id
+  //    from window.__data__. Then two POSTs: validate-context exchanges the meeting
+  //    id for the id to check (encryptMeetId for meeting passcodes, fileId for
+  //    recording-level ones), and validate-meeting-passwd / validate-passwd checks
+  //    the passcode itself. (/rec/validate_meet_passwd, the old flow, is long dead.)
   const passGate = async (gate: ZoomResult): Promise<void> => {
     if (!pass) die("passcode protected — pass it as argument 2");
     const pageUrl = safeUrl(gate.redirectUrl ?? "", host);
     if (!pageUrl) die(`bad gate redirect: ${gate.redirectUrl}`);
+    // the component page expects the gate's own params echoed in its query
     for (const [k, v] of Object.entries(gate)) if (v != null) pageUrl.searchParams.set(k, String(v));
     const compHtml = await fetchPage(client, pageUrl.toString());
     const meetId = pageVal("meeting_id", compHtml);
@@ -85,8 +94,10 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     if (!ok.status) die(`passcode rejected: ${ok.errorMessage}`);
   };
 
-  // 3. page -> fileId; share links have none and bounce through play/share-info
-  //    (which may itself be the gate) before landing on the play page.
+  // 3. find fileId in window.__data__. Play links carry it directly; share links
+  //    (/rec/share/...) don't and bounce through play/share-info/<meetingId>, which
+  //    redirects to the play page and can itself be the passcode gate. The play/info
+  //    call below needs the query params that come with the redirect, so keep them.
   let html = await fetchPage(client, start);
   let fileId = pageVal("fileId", html);
   if (!fileId) {
@@ -112,6 +123,7 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   }
   if (!fileId) die("no fileId on page — link expired or wrong url");
 
+  // play/info wants the page's query params + originDomain; retried after the gate opens
   const playInfo = async (): Promise<ZoomResponse> =>
     fetchJson(
       client,
@@ -125,7 +137,8 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     info = await playInfo();
   }
 
-  // 4. media info + CDN unlock (without playcheck the CDN 403s)
+  // 4. media info + CDN unlock: playcheck marks the session as really playing;
+  //    without it the CDN 403s the transfer. Best effort — transfer fails loudly anyway.
   const meta = mediaMeta(info.result ?? {});
   if (!meta.viewUrl) die("no playable media url in play/info response");
   if (!meta.playId || !meta.accessId) die("play/info missing playId/accessId");
@@ -140,7 +153,7 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   // 5. transfer: stream to disk (non-2xx throws, so error pages never end up as .mp4)
   mkdirSync(outDir, { recursive: true });
   const out = join(outDir, outName(meta, secs));
-  const referer = `${host}/`;
+  const referer = `${host}/`; // the CDN checks Referer
   if (secs) {
     const part = join(work, "part.mp4");
     // fetch only the first N-seconds of bytes for the preview trim
@@ -159,7 +172,7 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     await transfer(client, meta.viewUrl, part, { referer }, existsSync(part) ? statSync(part).size : 0);
     renameSync(part, out);
   }
-  console.log(out);
+  console.log(out); // the one stdout line: where the recording landed
 }
 
 if (import.meta.main) {
