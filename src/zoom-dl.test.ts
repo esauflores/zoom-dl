@@ -62,7 +62,7 @@ describe("mediaMeta", () => {
       accessId: "acc",
       duration: 5242,
       recording: { id: "be5373c8-8682", playId: "pid", fileSizeInMB: "184 MB" },
-      meet: { topic: "CURSO XTRAIL" },
+      meet: { topic: "WEEKLY STANDUP" },
     });
     expect(meta).toEqual({
       viewUrl: "https://cdn/x.mp4",
@@ -71,7 +71,7 @@ describe("mediaMeta", () => {
       recordingId: "be5373c8-8682",
       duration: 5242,
       sizeMB: 184,
-      topic: "CURSO XTRAIL",
+      topic: "WEEKLY STANDUP",
     });
   });
 
@@ -89,8 +89,8 @@ describe("mediaMeta", () => {
 
 describe("slug", () => {
   it("turns a topic into a filename", () => {
-    expect(slug("CURSO XTRAIL ROGUE CLASE 2")).toBe("CURSO-XTRAIL-ROGUE-CLASE-2");
-    expect(slug("Clase/Virtualización?")).toBe("Clase-Virtualización");
+    expect(slug("WEEKLY STANDUP EPISODE 42")).toBe("WEEKLY-STANDUP-EPISODE-42");
+    expect(slug("Año/Último?")).toBe("Año-Último");
   });
   it("never returns empty", () => {
     expect(slug("??? / \\")).toBe("----");
@@ -100,13 +100,13 @@ describe("slug", () => {
 
 describe("outName", () => {
   it("is unique per recording so resume can never mix files", () => {
-    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "CLASE 2" };
-    expect(outName({ ...base, recordingId: "be5373c8-8682" }, 0)).toBe("CLASE-2-be5373c8-8682.mp4");
-    expect(outName({ ...base, recordingId: "00ff00ff-1111" }, 10)).toBe("CLASE-2-00ff00ff-1111-first10s.mp4");
-    expect(outName({ ...base, recordingId: "" }, 0)).toBe("CLASE-2-p.mp4");
+    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "TEAM SYNC" };
+    expect(outName({ ...base, recordingId: "be5373c8-8682" }, 0)).toBe("TEAM-SYNC-be5373c8-8682.mp4");
+    expect(outName({ ...base, recordingId: "00ff00ff-1111" }, 10)).toBe("TEAM-SYNC-00ff00ff-1111-first10s.mp4");
+    expect(outName({ ...base, recordingId: "" }, 0)).toBe("TEAM-SYNC-p.mp4");
   });
   it("keeps names apart for ids sharing a prefix", () => {
-    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "CLASE 2" };
+    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "TEAM SYNC" };
     expect(outName({ ...base, recordingId: "be5373c8-1111" }, 0)).not.toBe(
       outName({ ...base, recordingId: "be5373c8-2222" }, 0),
     );
