@@ -4,7 +4,7 @@ Download Zoom cloud recordings — including **passcode-protected** ones and one
 owner disabled the download button.
 
 ```bash
-bun add -g @esauflores/zoom-dl    # or: npm i -g @esauflores/zoom-dl (the binary runs on bun)
+npm i -g @esauflores/zoom-dl    # or: bun add -g — runs on Node.js >= 18, no bun needed
 
 zoom-dl <url> [passcode] [seconds] [-o dir]
 
@@ -17,11 +17,10 @@ All three URL forms work: `/rec/play/...`, `/rec/share/...`, and the passcode pa
 (`/rec/component-page?...`, unwrapped via its `originRequestUrl` param). The `?iet=...`
 token in the link is what matters — it's the share session token.
 
-Needs: `bun`. The seconds preview trims with a bundled ffmpeg
-(`ffmpeg-static` — no system install needed; `trustedDependencies` is set so bun runs
-its binary download on install). Output goes to
+Runs on Node.js >= 18. From a checkout instead of npm: `bun run zoom-dl ...`.
+The seconds preview trims with `ffmpeg-static`; if its binary is missing (install
+scripts blocked), it falls back to a system `ffmpeg`. Output goes to
 `~/Downloads` (`-o dir` or `ZOOM_DL_DIR` to change), named after the meeting topic.
-From a checkout instead of npm: `bun run zoom-dl ...`.
 
 ## how it works
 

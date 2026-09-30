@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // zoom-dl — download a Zoom cloud recording.
 // Works on passcode-protected recordings and when the owner disabled the download button.
 //
@@ -160,11 +160,10 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     const range = `bytes=0-${previewBytes(meta.sizeMB, meta.duration, secs)}`;
     await transfer(client, meta.viewUrl, part, { referer, range }, 0);
 
-    const ff = spawnSync(
-      ffmpegPath ?? "ffmpeg",
-      ["-loglevel", "error", "-y", "-i", part, "-t", String(secs), "-c", "copy", out],
-      { stdio: ["ignore", "inherit", "inherit"] },
-    );
+    const ffBin = ffmpegPath && existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg"; // npm may block the bundled binary's install script
+    const ff = spawnSync(ffBin, ["-loglevel", "error", "-y", "-i", part, "-t", String(secs), "-c", "copy", out], {
+      stdio: ["ignore", "inherit", "inherit"],
+    });
     if (ff.status !== 0) die("ffmpeg failed");
   } else if (!existsSync(out)) {
     // .part + rename: an existing .mp4 is complete by construction, no size guesswork
@@ -175,28 +174,24 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   console.log(out); // the one stdout line: where the recording landed
 }
 
-if (import.meta.main) {
-  await new Command()
-    .name("zoom-dl")
-    .description("Download a Zoom cloud recording (passcode-protected / download-disabled friendly)")
-    .argument("<url>", "/rec/play/..., /rec/share/... or the passcode page link")
-    .argument("[passcode]", "meeting passcode; omit if the recording is not protected")
-    .argument("[seconds]", "only grab the first N seconds (quick preview)")
-    .option("-o, --out-dir <dir>", "output directory", process.env.ZOOM_DL_DIR || join(homedir(), "Downloads"))
-    .addHelpText(
-      "after",
-      `
+await new Command()
+  .name("zoom-dl")
+  .description("Download a Zoom cloud recording (passcode-protected / download-disabled friendly)")
+  .argument("<url>", "/rec/play/..., /rec/share/... or the passcode page link")
+  .argument("[passcode]", "meeting passcode; omit if the recording is not protected")
+  .argument("[seconds]", "only grab the first N seconds (quick preview)")
+  .option("-o, --out-dir <dir>", "output directory", process.env.ZOOM_DL_DIR || join(homedir(), "Downloads"))
+  .addHelpText(
+    "after",
+    `
 examples:
   zoom-dl 'https://.../rec/play/...' 'KD+ZLT1s'          # full recording
   zoom-dl 'https://.../rec/share/...' '*8q*n4mW' 10      # 10s preview
   zoom-dl 'https://.../rec/component-page?...' '...' -o /tmp`,
-    )
-    .action(
-      async (url: string, passcode: string | undefined, seconds: string | undefined, opts: { outDir: string }) => {
-        const secs = parseSeconds(seconds);
-        if (secs == null) die(`invalid seconds: ${seconds}`);
-        await run(url, passcode ?? "", secs, opts.outDir);
-      },
-    )
-    .parseAsync();
-}
+  )
+  .action(async (url: string, passcode: string | undefined, seconds: string | undefined, opts: { outDir: string }) => {
+    const secs = parseSeconds(seconds);
+    if (secs == null) die(`invalid seconds: ${seconds}`);
+    await run(url, passcode ?? "", secs, opts.outDir);
+  })
+  .parseAsync();
