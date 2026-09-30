@@ -5,7 +5,8 @@
   "scripts": {
     "check": "oxlint && oxfmt --check && tsc --noEmit",
     "check:fix": "oxlint --fix && oxfmt --write",
-    "test": "vitest run"
+    "test": "vitest run",
+    "zoom-dl": "bun run src/zoom-dl.ts"
   },
   "dependencies": {
     "commander": "^15.0.0",

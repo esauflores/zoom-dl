@@ -4,11 +4,11 @@ Download Zoom cloud recordings — including **passcode-protected** ones and one
 owner disabled the download button.
 
 ```bash
-./zoom-dl.sh <url> [passcode] [seconds] [-o dir]
+bun run zoom-dl <url> [passcode] [seconds] [-o dir]
 
-./zoom-dl.sh 'https://us02web.zoom.us/rec/play/...' 'KD+ZLT1s'          # full recording
-./zoom-dl.sh 'https://us02web.zoom.us/rec/share/...' '*8q*n4mW' 10     # 10s preview
-./zoom-dl.sh 'https://us02web.zoom.us/rec/component-page?...' '...' -o /tmp
+bun run zoom-dl 'https://us02web.zoom.us/rec/play/...' 'KD+ZLT1s'          # full recording
+bun run zoom-dl 'https://us02web.zoom.us/rec/share/...' '*8q*n4mW' 10     # 10s preview
+bun run zoom-dl 'https://us02web.zoom.us/rec/component-page?...' '...' -o /tmp
 ```
 
 All three URL forms work: `/rec/play/...`, `/rec/share/...`, and the passcode page
@@ -90,7 +90,6 @@ src/helpers/         helpers by category:
   download.ts        preview + resume math
 src/types.ts         response contracts (only the fields we read)
 src/zoom-dl.test.ts  vitest specs for the pure helpers
-zoom-dl.sh           wrapper: exec bun src/zoom-dl.ts "$@"
 ```
 
 Pure helpers (`parseUrl`, `resolveStart`, `pageVal`, `gateOf`, `mediaMeta`, `slug`,
