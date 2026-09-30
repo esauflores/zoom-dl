@@ -143,14 +143,9 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   const referer = `${host}/`;
   if (secs) {
     const part = join(work, "part.mp4");
-    // ponytail: the CDN honors Range (verified); one that ignores it just fills tmp, the trim still works
-    await transfer(
-      client,
-      meta.viewUrl,
-      part,
-      { referer, range: `bytes=0-${previewBytes(meta.sizeMB, meta.duration, secs)}` },
-      0,
-    );
+    // fetch only the first N-seconds of bytes for the preview trim
+    const range = `bytes=0-${previewBytes(meta.sizeMB, meta.duration, secs)}`;
+    await transfer(client, meta.viewUrl, part, { referer, range }, 0);
 
     const ff = spawnSync(
       ffmpegPath ?? "ffmpeg",
