@@ -60,10 +60,12 @@ play/info ──► viewMp4Url ──► playcheck ──► curl (cookies + Ref
    a Lambda@Edge on `ssrweb.zoom.us` 403s (`Forbbiden`, sic) every media request until
    the session is playchecked.
 
-6. **Transfer.** `curl` with the cookie jar and `Referer: https://<host>/`. ffmpeg's own
-   HTTP client gets 403'd, so the seconds mode does a ranged `curl` (2x the average byte
-   rate + moov headroom — the mp4 has `moov` up front) and trims locally with
-   `ffmpeg -t N -c copy`.
+6. **Transfer.** `curl --fail` with the cookie jar and `Referer: https://<host>/` — error
+   pages never end up saved as `.mp4`. ffmpeg's own HTTP client gets 403'd, so the seconds
+   mode does a ranged `curl` (2x the average byte rate + moov headroom — the mp4 has
+   `moov` up front) and trims locally with `ffmpeg -t N -c copy`. Full downloads resume
+   with `curl -C -`; filenames carry the recording id, so a resume can only ever resume
+   the same recording, and a finished file is skipped on re-runs.
 
 ## development
 
@@ -80,8 +82,8 @@ src/zoom-dl.test.ts  vitest specs for the pure helpers
 zoom-dl.sh           wrapper: exec bun src/zoom-dl.ts "$@"
 ```
 
-Pure helpers (`parseUrl`, `resolveStart`, `pageVal`, `isGate`, `mediaMeta`, `slug`,
-`previewBytes`) are unit-tested; the networked flow is proven by real downloads —
+Pure helpers (`parseUrl`, `resolveStart`, `pageVal`, `gateOf`, `mediaMeta`, `slug`,
+`outName`, `previewBytes`, `parseSeconds`) are unit-tested; the networked flow is proven by real downloads —
 all three URL forms above pass end-to-end.
 
 ## limits

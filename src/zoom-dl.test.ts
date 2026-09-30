@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { gateOf, mediaMeta, pageVal, parseUrl, previewBytes, resolveStart, slug } from "./zoom-dl";
+import {
+  gateOf,
+  mediaMeta,
+  outName,
+  pageVal,
+  parseSeconds,
+  parseUrl,
+  previewBytes,
+  resolveStart,
+  slug,
+} from "./zoom-dl";
 
 const PLAY_URL =
   "https://us02web.zoom.us/rec/play/AbC.123?accessLevel=meeting&canPlayFromShare=true&continueMode=true&iet=TOK.ET&componentName=rec-play&originRequestUrl=https%3A%2F%2Fus02web.zoom.us%2Frec%2Fshare%2Fx%3Fiet%3Dinner";
 
 describe("parseUrl", () => {
   it("keeps query params but drops originRequestUrl", () => {
-    const { host, query, iet } = parseUrl(PLAY_URL);
+    const { host, hostname, query, iet } = parseUrl(PLAY_URL);
     expect(host).toBe("https://us02web.zoom.us");
+    expect(hostname).toBe("us02web.zoom.us");
     expect(query).toEqual({
       accessLevel: "meeting",
       canPlayFromShare: "true",
@@ -57,13 +68,14 @@ describe("mediaMeta", () => {
       viewMp4Url: "https://cdn/x.mp4",
       accessId: "acc",
       duration: 5242,
-      recording: { playId: "pid", fileSizeInMB: "184 MB" },
+      recording: { id: "be5373c8-8682", playId: "pid", fileSizeInMB: "184 MB" },
       meet: { topic: "CURSO XTRAIL" },
     });
     expect(meta).toEqual({
       viewUrl: "https://cdn/x.mp4",
       playId: "pid",
       accessId: "acc",
+      recordingId: "be5373c8-8682",
       duration: 5242,
       sizeMB: 184,
       topic: "CURSO XTRAIL",
@@ -74,6 +86,7 @@ describe("mediaMeta", () => {
     const meta = mediaMeta({ mp4Url: "https://cdn/y.mp4" });
     expect(meta.viewUrl).toBe("https://cdn/y.mp4");
     expect(meta.playId).toBe("");
+    expect(meta.recordingId).toBe("");
     expect(meta.duration).toBe(0);
     expect(meta.sizeMB).toBe(0);
     expect(meta.topic).toBe("zoom-recording");
@@ -89,6 +102,29 @@ describe("slug", () => {
   it("never returns empty", () => {
     expect(slug("??? / \\")).toBe("----");
     expect(slug("")).toBe("zoom-recording");
+  });
+});
+
+describe("outName", () => {
+  it("is unique per recording so resume can never mix files", () => {
+    const base = { viewUrl: "x", playId: "p", accessId: "a", duration: 1, sizeMB: 1, topic: "CLASE 2" };
+    expect(outName({ ...base, recordingId: "be5373c8-8682" }, 0)).toBe("CLASE-2-be5373c8.mp4");
+    expect(outName({ ...base, recordingId: "00ff00ff-1111" }, 10)).toBe("CLASE-2-00ff00ff-first10s.mp4");
+    expect(outName({ ...base, recordingId: "" }, 0)).toBe("CLASE-2.mp4");
+  });
+});
+
+describe("parseSeconds", () => {
+  it("accepts empty as full download and positive integers as preview", () => {
+    expect(parseSeconds(undefined)).toBe(0);
+    expect(parseSeconds("")).toBe(0);
+    expect(parseSeconds("10")).toBe(10);
+    expect(parseSeconds("7.9")).toBe(7);
+  });
+  it("rejects junk instead of silently downloading everything", () => {
+    expect(parseSeconds("abc")).toBeNull();
+    expect(parseSeconds("-5")).toBeNull();
+    expect(parseSeconds("Infinity")).toBeNull();
   });
 });
 
