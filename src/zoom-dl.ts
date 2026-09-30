@@ -20,115 +20,19 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { CookieJar } from "tough-cookie";
 
-const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36";
-
-// ---------- response contracts (only the fields we read) ----------
-
-export interface ZoomResult {
-  componentName?: string;
-  redirectUrl?: string;
-  useWhichPasswd?: string;
-  sharelevel?: string;
-  action?: string;
-  encryptMeetId?: string;
-  fileId?: string;
-  viewMp4Url?: string;
-  mp4Url?: string;
-  accessId?: string;
-  duration?: number;
-  recording?: { id?: string; playId?: string; fileSizeInMB?: string };
-  meet?: { topic?: string };
-}
-
-export interface ZoomResponse {
-  status?: boolean;
-  errorMessage?: string;
-  result?: ZoomResult | null;
-}
-
-// ---------- pure helpers (tested) ----------
-
-function safeUrl(raw: string, base?: string): URL | null {
-  try {
-    return new URL(raw, base);
-  } catch {
-    return null;
-  }
-}
-
-export function parseUrl(raw: string): { host: string; hostname: string; query: Record<string, string>; iet: string } {
-  const u = safeUrl(raw);
-  if (!u) return { host: "", hostname: "", query: {}, iet: "" };
-  const query: Record<string, string> = {};
-  for (const [k, v] of u.searchParams) if (k !== "originRequestUrl") query[k] = v;
-  return { host: `${u.protocol}//${u.host}`, hostname: u.hostname, query, iet: u.searchParams.get("iet") ?? "" };
-}
-
-/** gate pages (/rec/component-page) carry the real link in originRequestUrl */
-export function resolveStart(raw: string): string {
-  const u = safeUrl(raw);
-  return u?.pathname.includes("/rec/component-page") ? u.searchParams.get("originRequestUrl") || raw : raw;
-}
-
-/** value of a `key: '...'` entry in window.__data__ */
-export function pageVal(key: string, html: string): string {
-  return html.match(new RegExp(`${key}:\\s*['"]([^'"]*)['"]`))?.[1] ?? "";
-}
-
-/** the new player answers componentName=need-password when gated */
-export function gateOf(res: ZoomResponse): ZoomResult | null {
-  return res.result?.componentName === "need-password" ? res.result : null;
-}
-
-export interface MediaMeta {
-  viewUrl: string;
-  playId: string;
-  accessId: string;
-  recordingId: string;
-  duration: number;
-  sizeMB: number;
-  topic: string;
-}
-
-export function mediaMeta(r: ZoomResult): MediaMeta {
-  return {
-    viewUrl: r.viewMp4Url || r.mp4Url || "",
-    playId: r.recording?.playId ?? "",
-    accessId: r.accessId ?? "",
-    recordingId: r.recording?.id ?? "",
-    duration: Number(r.duration ?? 0),
-    sizeMB: parseFloat(String(r.recording?.fileSizeInMB ?? "0")) || 0,
-    topic: r.meet?.topic || "zoom-recording",
-  };
-}
-
-export function slug(topic: string): string {
-  return topic.replace(/[ /\\]/g, "-").replace(/[^A-Za-z0-9Á-ÿ._-]/g, "") || "zoom-recording";
-}
-
-/** recording id in the name makes it unique per recording, so a resume can only ever resume itself */
-export function outName(meta: MediaMeta, secs: number): string {
-  return `${slug(meta.topic)}${meta.recordingId ? `-${meta.recordingId.slice(0, 8)}` : ""}${secs ? `-first${secs}s` : ""}.mp4`;
-}
-
-/** bytes to fetch for an N-second preview: moov headroom + 2x the average byte rate */
-export function previewBytes(sizeMB: number, duration: number, seconds: number): number {
-  return 3 * 1024 * 1024 + Math.trunc(((sizeMB * 1024 * 1024 * seconds) / Math.max(duration, 1)) * 2);
-}
-
-/** 0 = full download, null = invalid */
-export function parseSeconds(raw: string | undefined): number | null {
-  if (raw == null || raw === "") return 0;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
-}
-
-/** append only when the server confirmed our resume offset (206); anything else starts over */
-export function writeMode(partialBytes: number, status: number): "a" | "w" {
-  return partialBytes > 0 && status === 206 ? "a" : "w";
-}
-
-// ---------- cli ----------
+import {
+  gateOf,
+  mediaMeta,
+  outName,
+  pageVal,
+  parseSeconds,
+  parseUrl,
+  previewBytes,
+  resolveStart,
+  safeUrl,
+  writeMode,
+} from "./helpers";
+import type { ZoomResponse, ZoomResult } from "./types";
 
 function die(msg: string): never {
   console.error(`zoom-dl: ${msg}`);
@@ -153,7 +57,6 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
 
   const client = got.extend({
     cookieJar: new CookieJar(),
-    headers: { "user-agent": UA },
     followRedirect: true,
     retry: { limit: 2 },
   });
@@ -250,9 +153,7 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
   const playInfo = async (): Promise<ZoomResponse> =>
     fetchJson(
       `${host}/nws/recording/1.0/play/info/${fileId}?${new URLSearchParams(ctx.query)}&originDomain=${ctx.hostname}`,
-      {
-        headers: csrfHeaders,
-      },
+      { headers: csrfHeaders },
     );
   let info = await playInfo();
   const infoGate = gateOf(info);

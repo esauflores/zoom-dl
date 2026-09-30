@@ -11,7 +11,7 @@ import {
   resolveStart,
   slug,
   writeMode,
-} from "./zoom-dl";
+} from "./helpers";
 
 const PLAY_URL =
   "https://us02web.zoom.us/rec/play/AbC.123?accessLevel=meeting&canPlayFromShare=true&continueMode=true&iet=TOK.ET&componentName=rec-play&originRequestUrl=https%3A%2F%2Fus02web.zoom.us%2Frec%2Fshare%2Fx%3Fiet%3Dinner";
