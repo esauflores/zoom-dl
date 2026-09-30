@@ -8,7 +8,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "ffmpeg-static": "^5.3.0"
   },
   "devDependencies": {
     "bun-types": "^1.4.2",
@@ -16,5 +17,8 @@
     "oxlint": "^1.86.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
-  }
+  },
+  "trustedDependencies": [
+    "ffmpeg-static"
+  ]
 }

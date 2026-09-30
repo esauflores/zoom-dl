@@ -8,9 +8,10 @@
 //   passcode meeting passcode; omit if the recording is not protected
 //   seconds  only grab the first N seconds (quick preview)
 //
-// needs: curl (+ ffmpeg only for the seconds mode)
+// needs: curl (the seconds preview uses the bundled ffmpeg)
 
 import { Command } from "commander";
+import ffmpegPath from "ffmpeg-static";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -280,7 +281,7 @@ function run(url: string, pass: string, secs: number, outDir: string): void {
       part,
     );
     const ff = spawnSync(
-      "ffmpeg",
+      ffmpegPath ?? "ffmpeg",
       [
         "-hide_banner",
         "-loglevel",

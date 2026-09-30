@@ -15,7 +15,9 @@ All three URL forms work: `/rec/play/...`, `/rec/share/...`, and the passcode pa
 (`/rec/component-page?...`, unwrapped via its `originRequestUrl` param). The `?iet=...`
 token in the link is what matters — it's the share session token.
 
-Needs: `bun`, `curl` (+ `ffmpeg` only for the `seconds` mode). Output goes to
+Needs: `bun`, `curl`. The seconds preview trims with a bundled ffmpeg
+(`ffmpeg-static` — no system install needed; `trustedDependencies` is set so bun runs
+its binary download on install). Output goes to
 `~/Downloads` (`-o dir` or `ZOOM_DL_DIR` to change), named after the meeting topic.
 
 ## how it works
@@ -63,7 +65,8 @@ play/info ──► viewMp4Url ──► playcheck ──► curl (cookies + Ref
 6. **Transfer.** `curl --fail` with the cookie jar and `Referer: https://<host>/` — error
    pages never end up saved as `.mp4`. ffmpeg's own HTTP client gets 403'd, so the seconds
    mode does a ranged `curl` (2x the average byte rate + moov headroom — the mp4 has
-   `moov` up front) and trims locally with `ffmpeg -t N -c copy`. Full downloads resume
+   `moov` up front) and trims locally with the bundled `ffmpeg -t N -c copy`. Full
+   downloads resume
    with `curl -C -`; filenames carry the recording id, so a resume can only ever resume
    the same recording, and a finished file is skipped on re-runs.
 
