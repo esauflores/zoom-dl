@@ -47,6 +47,25 @@ function isHttp(e: unknown, status: number): boolean {
   return e instanceof HTTPError && e.response.statusCode === status;
 }
 
+async function fetchPage(client: Got, u: string): Promise<string> {
+  try {
+    return (await client.get(u)).body;
+  } catch (e) {
+    return die(`fetch failed: ${errMsg(e)}`);
+  }
+}
+
+async function fetchJson(client: Got, u: string, opts: OptionsInit = {}): Promise<ZoomResponse> {
+  let parsed: unknown;
+  try {
+    parsed = (await client(u, { responseType: "json", ...opts })).body;
+  } catch (e) {
+    return die(`request failed: ${errMsg(e)}`);
+  }
+  if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
+  return parsed as ZoomResponse;
+}
+
 async function run(url: string, pass: string, secs: number, outDir: string): Promise<void> {
   const start = resolveStart(url);
   const ctx = parseUrl(start);
@@ -60,24 +79,6 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     followRedirect: true,
     retry: { limit: 2 },
   });
-
-  const fetchPage = async (u: string): Promise<string> => {
-    try {
-      return (await client.get(u)).body;
-    } catch (e) {
-      return die(`fetch failed: ${errMsg(e)}`);
-    }
-  };
-  const fetchJson = async (u: string, opts: OptionsInit = {}): Promise<ZoomResponse> => {
-    let parsed: unknown;
-    try {
-      parsed = (await client(u, { responseType: "json", ...opts })).body;
-    } catch (e) {
-      return die(`request failed: ${errMsg(e)}`);
-    }
-    if (!parsed || typeof parsed !== "object") return die(`unexpected response from ${u}`);
-    return parsed as ZoomResponse;
-  };
 
   // 1. CSRF token (zoom validates POSTs through CSRFGuard)
   const csrfResp = await client
@@ -94,12 +95,12 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     const pageUrl = safeUrl(gate.redirectUrl ?? "", host);
     if (!pageUrl) die(`bad gate redirect: ${gate.redirectUrl}`);
     for (const [k, v] of Object.entries(gate)) if (v != null) pageUrl.searchParams.set(k, String(v));
-    const compHtml = await fetchPage(pageUrl.toString());
+    const compHtml = await fetchPage(client, pageUrl.toString());
     const meetId = pageVal("meeting_id", compHtml);
     const compFileId = pageVal("fileId", compHtml);
     if (!meetId) die("could not read meeting_id from passcode page");
     const useW = gate.useWhichPasswd || "meeting";
-    const vctx = await fetchJson(`${host}/nws/recording/1.0/validate-context`, {
+    const vctx = await fetchJson(client, `${host}/nws/recording/1.0/validate-context`, {
       method: "post",
       headers: csrfHeaders,
       form: {
@@ -113,6 +114,7 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
     const vid = useW === "meeting" ? vctx.result?.encryptMeetId : vctx.result?.fileId || compFileId;
     if (!vid) die("validate-context failed (wrong passcode or dead link)");
     const ok = await fetchJson(
+      client,
       `${host}/nws/recording/1.0/${useW === "meeting" ? "validate-meeting-passwd" : "validate-passwd"}`,
       {
         method: "post",
@@ -125,17 +127,17 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
 
   // 3. page -> fileId; share links have none and bounce through play/share-info
   //    (which may itself be the gate) before landing on the play page.
-  let html = await fetchPage(start);
+  let html = await fetchPage(client, start);
   let fileId = pageVal("fileId", html);
   if (!fileId) {
     const meeting = pageVal("meetingId", html);
     if (!meeting) die("no fileId on page — link expired or wrong url");
     const sinfoUrl = `${host}/nws/recording/1.0/play/share-info/${meeting}`;
-    let sinfo = await fetchJson(sinfoUrl);
+    let sinfo = await fetchJson(client, sinfoUrl);
     const shareGate = gateOf(sinfo);
     if (shareGate) {
       await passGate(shareGate);
-      sinfo = await fetchJson(sinfoUrl);
+      sinfo = await fetchJson(client, sinfoUrl);
     }
     let redir = sinfo.result?.redirectUrl ?? "";
     if (!redir) die("share-info returned no redirect");
@@ -145,13 +147,14 @@ async function run(url: string, pass: string, secs: number, outDir: string): Pro
       ctx.query = from.query;
       ctx.iet = from.iet;
     }
-    html = await fetchPage(redir);
+    html = await fetchPage(client, redir);
     fileId = pageVal("fileId", html);
   }
   if (!fileId) die("no fileId on page — link expired or wrong url");
 
   const playInfo = async (): Promise<ZoomResponse> =>
     fetchJson(
+      client,
       `${host}/nws/recording/1.0/play/info/${fileId}?${new URLSearchParams(ctx.query)}&originDomain=${ctx.hostname}`,
       { headers: csrfHeaders },
     );
